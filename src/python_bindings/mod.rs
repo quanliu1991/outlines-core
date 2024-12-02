@@ -5,6 +5,7 @@ use crate::regex::get_token_transition_keys;
 use crate::regex::get_vocabulary_transition_keys;
 use crate::regex::state_scan_tokens;
 use crate::regex::walk_fsm;
+use bincode::config;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -72,7 +73,7 @@ impl PyFSMInfo {
     }
 }
 
-#[pyclass(name = "Index")]
+#[pyclass(name = "Index", module = "outlines_core.fsm.outlines_core_rs")]
 pub struct PyIndex(Index);
 
 #[pymethods]
@@ -87,6 +88,27 @@ impl PyIndex {
         Index::new(&fsm_info.into(), &vocabulary.0, eos_token_id, frozen_tokens)
             .map(PyIndex)
             .map_err(Into::into)
+    }
+
+    fn __reduce__(&self) -> PyResult<(PyObject, (Vec<u8>,))> {
+        Python::with_gil(|py| {
+            let cls = PyModule::import_bound(py, "outlines_core.fsm.outlines_core_rs")?
+                .getattr("Index")?;
+            let binary_data: Vec<u8> = bincode::encode_to_vec(&self.0, config::standard())
+                .map_err(|e| {
+                    PyErr::new::<PyValueError, _>(format!("Serialization of Index failed: {}", e))
+                })?;
+            Ok((cls.getattr("from_binary")?.to_object(py), (binary_data,)))
+        })
+    }
+
+    #[staticmethod]
+    fn from_binary(binary_data: Vec<u8>) -> PyResult<Self> {
+        let (index, _): (Index, usize) =
+            bincode::decode_from_slice(&binary_data[..], config::standard()).map_err(|e| {
+                PyErr::new::<PyValueError, _>(format!("Deserialization of Index failed: {}", e))
+            })?;
+        Ok(PyIndex(index))
     }
 
     fn get_allowed_tokens(&self, state: u32) -> Option<Vec<u32>> {
