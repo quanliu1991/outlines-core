@@ -100,6 +100,7 @@
 //! An empty object means unconstrained, allowing any JSON type.
 
 use serde_json::Value;
+pub use types::*;
 
 mod parsing;
 pub mod types;
@@ -189,8 +190,9 @@ pub fn regex_from_value(json: &Value, whitespace_pattern: Option<&str>) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use regex::Regex;
+
+    use super::*;
 
     fn should_match(re: &Regex, value: &str) {
         // Asserts that value is fully matched.
@@ -1083,6 +1085,25 @@ mod tests {
                     "username@example..com",          // double dot in domain name
                     "username@.example..com",         // multiple errors in domain
                 ]
+            ),
+
+            // ==========================================================
+            //                      Multiple types
+            // ==========================================================
+            (
+                r#"{
+                    "title": "Foo",
+                    "type": ["string", "number", "boolean"]
+                }"#,
+                format!(r#"((?:"{STRING_INNER}*")|(?:{NUMBER})|(?:{BOOLEAN}))"#).as_str(),
+                vec!["12.3", "true", r#""a""#],
+                vec![
+                    "null",
+                    "",
+                    "12true",
+                    r#"1.3"a""#,
+                    r#"12.3true"a""#,
+                ],
             ),
             // Confirm that oneOf doesn't produce illegal lookaround: https://github.com/dottxt-ai/outlines/issues/823
             //

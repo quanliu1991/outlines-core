@@ -7,7 +7,8 @@ use serde_json::json;
 use serde_json::Value;
 
 use crate::json_schema::types;
-use crate::{Error, Result};
+use crate::Error;
+use crate::Result;
 
 pub(crate) struct Parser<'a> {
     root: &'a Value,
@@ -305,9 +306,39 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self, obj: &serde_json::Map<String, Value>) -> Result<String> {
-        let instance_type = obj["type"]
-            .as_str()
-            .ok_or_else(|| Error::TypeMustBeAString)?;
+        match obj.get("type") {
+            Some(Value::String(instance_type)) => self.parse_type_string(instance_type, obj),
+            Some(Value::Array(instance_types)) => self.parse_type_array(instance_types, obj),
+            _ => Err(Error::TypeMustBeAStringOrArray),
+        }
+    }
+
+    fn parse_type_array(
+        &mut self,
+        instance_types: &[serde_json::Value],
+        obj: &serde_json::Map<String, Value>,
+    ) -> Result<String> {
+        let xor_patterns = instance_types
+            .iter()
+            .map(|instance_type| match instance_type.as_str() {
+                Some(instance_type) => {
+                    let sub_regex = self.parse_type_string(instance_type, obj)?;
+
+                    Ok(format!(r"(?:{})", sub_regex))
+                }
+                None => Err(Error::TypeMustBeAStringOrArray),
+            })
+            .collect::<Result<Vec<String>>>()?
+            .join("|");
+
+        Ok(format!(r"({})", xor_patterns))
+    }
+
+    fn parse_type_string(
+        &mut self,
+        instance_type: &str,
+        obj: &serde_json::Map<String, Value>,
+    ) -> Result<String> {
         match instance_type {
             "string" => self.parse_string_type(obj),
             "number" => self.parse_number_type(obj),
